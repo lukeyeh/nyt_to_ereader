@@ -14,16 +14,18 @@ except ImportError:
 class ArticleFetcher:
     """Fetches and parses full article content from NYT article pages using a real browser."""
 
-    def __init__(self, cookie_file: Optional[str] = None, use_browser: bool = True):
+    def __init__(self, cookie_file: Optional[str] = None, use_browser: bool = True, headless: bool = True):
         """Initialize the article fetcher.
 
         Args:
             cookie_file: Path to cookie file (JSON format for Playwright)
             use_browser: Use real browser via Playwright (recommended, bypasses bot detection)
+            headless: Run browser in headless mode (set False for debugging)
         """
         self.cookie_file = cookie_file
         self.cookies = []
         self.use_browser = use_browser and PLAYWRIGHT_AVAILABLE
+        self.headless = headless
 
         if not PLAYWRIGHT_AVAILABLE and use_browser:
             print("⚠ Playwright not installed. Install with: pip install playwright && playwright install chromium")
@@ -138,16 +140,38 @@ class ArticleFetcher:
         """
         try:
             with sync_playwright() as p:
-                # Launch browser with anti-detection flags
+                # Launch browser with MAXIMUM anti-detection flags
                 browser = p.chromium.launch(
-                    headless=True,
+                    headless=self.headless,
                     args=[
                         '--disable-blink-features=AutomationControlled',
                         '--disable-dev-shm-usage',
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
                         '--disable-web-security',
-                        '--disable-features=IsolateOrigins,site-per-process'
+                        '--disable-features=IsolateOrigins,site-per-process',
+                        '--disable-infobars',
+                        '--window-position=0,0',
+                        '--ignore-certifcate-errors',
+                        '--ignore-certifcate-errors-spki-list',
+                        '--disable-gpu',
+                        '--disable-software-rasterizer',
+                        '--disable-dev-shm-usage',
+                        '--no-zygote',
+                        '--no-first-run',
+                        '--no-default-browser-check',
+                        '--disable-background-timer-throttling',
+                        '--disable-backgrounding-occluded-windows',
+                        '--disable-renderer-backgrounding',
+                        '--disable-hang-monitor',
+                        '--disable-ipc-flooding-protection',
+                        '--disable-popup-blocking',
+                        '--disable-prompt-on-repost',
+                        '--metrics-recording-only',
+                        '--safebrowsing-disable-auto-update',
+                        '--password-store=basic',
+                        '--use-mock-keychain',
+                        '--enable-features=NetworkService,NetworkServiceInProcess'
                     ]
                 )
 
@@ -181,51 +205,167 @@ class ArticleFetcher:
                 # Create new page
                 page = context.new_page()
 
-                # Add JavaScript to hide automation indicators
+                # Add COMPREHENSIVE JavaScript to hide ALL automation indicators
                 page.add_init_script("""
+                    // Override webdriver property
                     Object.defineProperty(navigator, 'webdriver', {
                         get: () => undefined
                     });
 
+                    // Add chrome object
                     window.chrome = {
-                        runtime: {}
+                        runtime: {},
+                        loadTimes: function() {},
+                        csi: function() {},
+                        app: {}
                     };
 
+                    // Override plugins
                     Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
+                        get: () => [
+                            {name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer'},
+                            {name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                            {name: 'Native Client', description: '', filename: 'internal-nacl-plugin'}
+                        ]
                     });
 
+                    // Override languages
                     Object.defineProperty(navigator, 'languages', {
                         get: () => ['en-US', 'en']
                     });
+
+                    // Override permissions
+                    const originalQuery = window.navigator.permissions.query;
+                    window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                            Promise.resolve({state: Notification.permission}) :
+                            originalQuery(parameters)
+                    );
+
+                    // Override platform
+                    Object.defineProperty(navigator, 'platform', {
+                        get: () => 'Win32'
+                    });
+
+                    // Override hardwareConcurrency
+                    Object.defineProperty(navigator, 'hardwareConcurrency', {
+                        get: () => 8
+                    });
+
+                    // Override deviceMemory
+                    Object.defineProperty(navigator, 'deviceMemory', {
+                        get: () => 8
+                    });
+
+                    // Canvas fingerprinting protection
+                    const getImageData = CanvasRenderingContext2D.prototype.getImageData;
+                    CanvasRenderingContext2D.prototype.getImageData = function() {
+                        const imageData = getImageData.apply(this, arguments);
+                        // Add tiny noise to prevent fingerprinting
+                        for (let i = 0; i < imageData.data.length; i++) {
+                            imageData.data[i] = imageData.data[i] + Math.floor(Math.random() * 2);
+                        }
+                        return imageData;
+                    };
+
+                    // WebGL fingerprinting protection
+                    const getParameter = WebGLRenderingContext.prototype.getParameter;
+                    WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                        if (parameter === 37445) {
+                            return 'Intel Inc.';
+                        }
+                        if (parameter === 37446) {
+                            return 'Intel Iris OpenGL Engine';
+                        }
+                        return getParameter.apply(this, arguments);
+                    };
+
+                    // Override maxTouchPoints
+                    Object.defineProperty(navigator, 'maxTouchPoints', {
+                        get: () => 0
+                    });
+
+                    // Override vendor
+                    Object.defineProperty(navigator, 'vendor', {
+                        get: () => 'Google Inc.'
+                    });
+
+                    // Add missing window.chrome properties
+                    if (!window.chrome) {
+                        window.chrome = {};
+                    }
+                    window.chrome.runtime = {
+                        onMessage: {},
+                        sendMessage: () => {}
+                    };
+
+                    // Spoof timezone
+                    Date.prototype.getTimezoneOffset = function() {
+                        return 300; // EST timezone offset
+                    };
                 """)
 
-                # Navigate to article with realistic behavior
+                # Navigate to article with MAXIMUM realistic behavior
                 try:
                     # FIRST: Visit NYT homepage to establish session (looks more human)
-                    print(f"    Establishing session at nytimes.com...")
-                    page.goto('https://www.nytimes.com/', wait_until='domcontentloaded', timeout=30000)
-                    page.wait_for_timeout(1000 + (hash(url) % 1000))  # Random delay 1-2s
+                    print(f"    [1/6] Establishing session at nytimes.com...")
+                    home_response = page.goto('https://www.nytimes.com/', wait_until='domcontentloaded', timeout=30000)
+                    if home_response:
+                        print(f"    [✓] Homepage loaded (status: {home_response.status})")
+
+                    # Human-like delay
+                    page.wait_for_timeout(1500 + (hash(url) % 1500))  # 1.5-3s
+
+                    # Move mouse around a bit (very human!)
+                    print(f"    [2/6] Simulating human interaction...")
+                    page.mouse.move(100, 200)
+                    page.wait_for_timeout(200)
+                    page.mouse.move(400, 500)
+
+                    # Scroll on homepage
+                    page.evaluate('window.scrollBy(0, 300)')
+                    page.wait_for_timeout(800)
 
                     # NOW: Navigate to the actual article
-                    print(f"    Fetching article...")
-                    response = page.goto(url, wait_until='networkidle', timeout=45000)
+                    print(f"    [3/6] Navigating to article...")
+                    response = page.goto(url, wait_until='networkidle', timeout=60000)
 
-                    # Check if we got blocked
-                    if response and response.status == 403:
-                        print(f"    ⚠ 403 Forbidden - NYT blocked the request")
-                        browser.close()
-                        return None
+                    # DIAGNOSTIC: Check response
+                    if response:
+                        print(f"    [✓] Article page loaded (status: {response.status})")
+                        if response.status == 403:
+                            print(f"    [✗] 403 FORBIDDEN - NYT blocked the request")
+                            print(f"    Debugging info:")
+                            print(f"      - Cookies loaded: {len(self.cookies)}")
+                            print(f"      - URL: {url}")
+                            # Save screenshot for debugging
+                            if not self.headless:
+                                page.screenshot(path='debug_403.png')
+                                print(f"      - Screenshot saved to debug_403.png")
+                            browser.close()
+                            return None
+                        elif response.status >= 400:
+                            print(f"    [✗] HTTP {response.status} - Error loading article")
+                            browser.close()
+                            return None
 
                     # Wait for content to fully load (random human-like delay)
-                    import time
-                    page.wait_for_timeout(2000 + (hash(url) % 1500))
+                    print(f"    [4/6] Waiting for content to load...")
+                    page.wait_for_timeout(2000 + (hash(url) % 2000))  # 2-4s
 
-                    # Scroll down a bit (human behavior)
-                    page.evaluate('window.scrollBy(0, 500)')
-                    page.wait_for_timeout(500)
+                    # Human-like reading behavior
+                    print(f"    [5/6] Simulating reading behavior...")
+                    # Scroll down slowly (like reading)
+                    for i in range(3):
+                        page.evaluate(f'window.scrollBy(0, {300 + (i * 100)})')
+                        page.wait_for_timeout(600 + (hash(url) % 400))
+
+                    # Scroll back up a bit (humans do this!)
+                    page.evaluate('window.scrollBy(0, -200)')
+                    page.wait_for_timeout(400)
 
                     # Get the page content
+                    print(f"    [6/6] Extracting content...")
                     html_content = page.content()
 
                     # Close browser
@@ -233,6 +373,7 @@ class ArticleFetcher:
 
                     # Parse with BeautifulSoup
                     soup = BeautifulSoup(html_content, 'html.parser')
+                    print(f"    [✓] Content extracted successfully")
 
                     # Check for paywall indicators
                     if soup.find(string=lambda text: text and 'subscribe' in text.lower()):

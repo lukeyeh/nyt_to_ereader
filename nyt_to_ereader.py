@@ -49,6 +49,11 @@ def main():
         help='Path to cookie file for NYT authentication (JSON or Netscape format). '
              'Required to access full article content if you have a subscription.'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Run browser in non-headless mode for debugging (shows browser window)'
+    )
 
     args = parser.parse_args()
 
@@ -92,7 +97,11 @@ def main():
 
     # Process articles
     article_data = []
-    fetcher = ArticleFetcher(cookie_file=args.cookies)
+    fetcher = ArticleFetcher(cookie_file=args.cookies, headless=not args.debug)
+
+    if args.debug:
+        print("🐛 DEBUG MODE: Browser will be visible. Watch the automation in action!")
+        print()
 
     for idx, article in enumerate(articles, 1):
         details = client.get_article_details(article)
