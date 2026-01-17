@@ -292,39 +292,59 @@ class ArticleFetcher:
             True if CAPTCHA was handled, False otherwise
         """
         try:
-            # Check for common CAPTCHA indicators
-            html = page.content()
-            captcha_indicators = [
-                'captcha',
-                'challenge',
-                'puzzle',
-                'slider',
-                'verification',
-                'px-captcha',  # PerimeterX CAPTCHA
-                'arkose',      # Arkose Labs
-                'recaptcha'
+            # More sophisticated CAPTCHA detection
+            # Check for visible CAPTCHA elements with specific selectors
+            captcha_selectors = [
+                '[class*="captcha"]',
+                '[id*="captcha"]',
+                '[class*="challenge"]',
+                '[id*="px-captcha"]',
+                'iframe[src*="captcha"]',
+                'iframe[src*="recaptcha"]',
+                '[class*="arkose"]',
             ]
 
-            has_captcha = any(indicator in html.lower() for indicator in captcha_indicators)
+            # Check if any CAPTCHA element is visible
+            captcha_visible = False
+            for selector in captcha_selectors:
+                try:
+                    element = page.query_selector(selector)
+                    if element and element.is_visible():
+                        captcha_visible = True
+                        break
+                except:
+                    continue
 
-            if has_captcha:
+            # Also check page title for CAPTCHA indicators
+            title = page.title().lower()
+            if 'captcha' in title or 'challenge' in title or 'verification' in title:
+                captcha_visible = True
+
+            # If we think there's a CAPTCHA, ask user to confirm
+            if captcha_visible:
                 print(f"\n" + "="*60)
-                print("⚠️  CAPTCHA DETECTED!")
+                print("⚠️  POSSIBLE CAPTCHA DETECTED")
                 print("="*60)
-                print("\nNYT is showing a CAPTCHA challenge (puzzle piece slider).")
-                print("\n🧩 PLEASE SOLVE THE CAPTCHA IN THE BROWSER WINDOW:")
-                print("   1. Drag the puzzle piece to complete the image")
-                print("   2. Wait for the page to load normally")
-                print("   3. Press ENTER here when you're done")
-                print("\n" + "="*60 + "\n")
+                print("\nDo you see a CAPTCHA (puzzle piece slider) on the page?")
+                response = input(">>> Type 'yes' if you see a CAPTCHA, or just press ENTER to continue: ").strip().lower()
 
-                # Wait for user to solve CAPTCHA
-                input(">>> Press ENTER after solving the CAPTCHA >>> ")
+                if response in ['yes', 'y']:
+                    print("\n🧩 PLEASE SOLVE THE CAPTCHA IN THE BROWSER WINDOW:")
+                    print("   1. Drag the puzzle piece to complete the image")
+                    print("   2. Wait for the page to load normally")
+                    print("   3. Press ENTER here when you're done")
+                    print("\n" + "="*60 + "\n")
 
-                # Wait a bit for page to settle
-                page.wait_for_timeout(2000)
-                print("✅ Continuing...")
-                return True
+                    # Wait for user to solve CAPTCHA
+                    input(">>> Press ENTER after solving the CAPTCHA >>> ")
+
+                    # Wait a bit for page to settle
+                    page.wait_for_timeout(2000)
+                    print("✅ Continuing...")
+                    return True
+                else:
+                    print("✅ No CAPTCHA, continuing...")
+                    return False
 
             return False
 
