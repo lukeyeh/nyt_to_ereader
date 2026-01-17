@@ -1,18 +1,77 @@
 """Fetch and parse full article content from NYT."""
+import json
 import requests
 from bs4 import BeautifulSoup
+from pathlib import Path
 from typing import Dict, Optional
+from http.cookiejar import MozillaCookieJar
 
 
 class ArticleFetcher:
     """Fetches and parses full article content from NYT article pages."""
 
-    def __init__(self):
-        """Initialize the article fetcher."""
+    def __init__(self, cookie_file: Optional[str] = None):
+        """Initialize the article fetcher.
+
+        Args:
+            cookie_file: Path to cookie file (JSON or Netscape format)
+        """
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
+
+        # Load cookies if provided
+        if cookie_file:
+            self._load_cookies(cookie_file)
+
+    def _load_cookies(self, cookie_file: str):
+        """Load cookies from a file.
+
+        Supports both JSON format and Netscape cookie jar format.
+
+        Args:
+            cookie_file: Path to the cookie file
+        """
+        cookie_path = Path(cookie_file)
+
+        if not cookie_path.exists():
+            print(f"Warning: Cookie file not found: {cookie_file}")
+            return
+
+        try:
+            # Try JSON format first
+            if cookie_path.suffix == '.json':
+                with open(cookie_path, 'r') as f:
+                    cookies = json.load(f)
+
+                # Handle different JSON cookie formats
+                if isinstance(cookies, list):
+                    # Format: [{"name": "...", "value": "...", "domain": "..."}, ...]
+                    for cookie in cookies:
+                        self.session.cookies.set(
+                            name=cookie.get('name'),
+                            value=cookie.get('value'),
+                            domain=cookie.get('domain', '.nytimes.com'),
+                            path=cookie.get('path', '/')
+                        )
+                elif isinstance(cookies, dict):
+                    # Format: {"cookie_name": "cookie_value", ...}
+                    for name, value in cookies.items():
+                        self.session.cookies.set(name, value, domain='.nytimes.com')
+
+                print(f"Loaded {len(self.session.cookies)} cookies from {cookie_file}")
+
+            # Try Netscape cookie jar format
+            else:
+                cookie_jar = MozillaCookieJar(cookie_file)
+                cookie_jar.load(ignore_discard=True, ignore_expires=True)
+                self.session.cookies.update(cookie_jar)
+                print(f"Loaded {len(cookie_jar)} cookies from {cookie_file}")
+
+        except Exception as e:
+            print(f"Warning: Could not load cookies from {cookie_file}: {e}")
+            print("Continuing without authentication - full articles may not be available.")
 
     def fetch_article_content(self, url: str) -> Optional[str]:
         """Fetch the full article content from a URL.

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "nyt-a",
+    "value": "YOUR_COOKIE_VALUE_HERE",
+    "domain": ".nytimes.com",
+    "path": "/"
+  },
+  {
+    "name": "nyt-s",
+    "value": "YOUR_COOKIE_VALUE_HERE",
+    "domain": ".nytimes.com",
+    "path": "/"
+  }
+]

@@ -43,6 +43,12 @@ def main():
         action='store_true',
         help='Only include abstracts, skip fetching full article content'
     )
+    parser.add_argument(
+        '--cookies',
+        '-c',
+        help='Path to cookie file for NYT authentication (JSON or Netscape format). '
+             'Required to access full article content if you have a subscription.'
+    )
 
     args = parser.parse_args()
 
@@ -86,7 +92,7 @@ def main():
 
     # Process articles
     article_data = []
-    fetcher = ArticleFetcher()
+    fetcher = ArticleFetcher(cookie_file=args.cookies)
 
     for idx, article in enumerate(articles, 1):
         details = client.get_article_details(article)

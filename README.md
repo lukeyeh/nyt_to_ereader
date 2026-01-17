@@ -45,6 +45,40 @@ Your `.env` file should look like:
 NYT_API_KEY=your_actual_api_key_here
 ```
 
+5. **(Optional) Set up authentication for full article access**:
+
+If you have a NYT subscription and want to access full article content (not just abstracts), you'll need to export your browser cookies:
+
+**Option 1: Using a Browser Extension (Recommended)**
+
+1. Install a cookie export extension:
+   - Chrome/Edge: [Get cookies.txt](https://chrome.google.com/webstore/detail/get-cookiestxt/bgaddhkoddajcdgocldbbfleckgcbcid)
+   - Firefox: [cookies.txt](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
+
+2. Log in to nytimes.com in your browser
+3. Click the extension icon and export cookies for nytimes.com
+4. Save the file as `nyt_cookies.txt` in the project directory
+
+**Option 2: Manual JSON Export**
+
+1. Log in to nytimes.com
+2. Open Developer Tools (F12)
+3. Go to Application → Cookies → https://nytimes.com
+4. Look for important cookies like `nyt-a`, `nyt-s`, or similar
+5. Create a JSON file `nyt_cookies.json`:
+```json
+[
+  {
+    "name": "nyt-a",
+    "value": "your_cookie_value_here",
+    "domain": ".nytimes.com",
+    "path": "/"
+  }
+]
+```
+
+Then use the `--cookies` flag when running the tool (see Usage section below).
+
 ## Usage
 
 ### Basic Usage
@@ -55,6 +89,17 @@ python nyt_to_ereader.py
 ```
 
 This will create a file named `nyt_home_YYYYMMDD.epub` in the current directory.
+
+### With NYT Subscription (Full Article Access)
+
+If you have a NYT subscription and exported your cookies:
+```bash
+python nyt_to_ereader.py --cookies nyt_cookies.txt
+# or
+python nyt_to_ereader.py --cookies nyt_cookies.json
+```
+
+This will fetch full article content instead of just abstracts.
 
 ### Advanced Options
 
@@ -85,6 +130,7 @@ python nyt_to_ereader.py --no-content
 Combine options:
 ```bash
 python nyt_to_ereader.py --section technology --limit 15 --output tech_news.epub
+python nyt_to_ereader.py --section world --cookies nyt_cookies.txt --limit 20
 ```
 
 ### Help
@@ -133,9 +179,17 @@ Note: Older Kindles may require conversion to MOBI format using Calibre or Amazo
 - The `.env` file should be in the same directory as the scripts
 
 **"Could not fetch full content" warnings**
-- Some articles may have paywalls or different formatting
-- The tool will fall back to using the article abstract
-- Use `--no-content` flag to skip content fetching entirely
+- NYT articles are behind a paywall for non-subscribers
+- If you have a NYT subscription, export your cookies and use `--cookies` flag (see installation step 5)
+- Without authentication, the tool will fall back to using article abstracts
+- Use `--no-content` flag to skip content fetching entirely if you don't need full articles
+
+**Cookie authentication not working**
+- Make sure you're logged into nytimes.com before exporting cookies
+- Try exporting cookies again - they may have expired
+- Verify the cookie file path is correct
+- Check that the cookie file format is valid (JSON array or Netscape format)
+- Common cookie names to look for: `nyt-a`, `nyt-s`, `NYT-S`
 
 **API rate limits**
 - The free NYT API tier has rate limits (typically 500 requests per day, 5 per minute)
