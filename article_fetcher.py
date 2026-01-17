@@ -14,26 +14,31 @@ except ImportError:
 class ArticleFetcher:
     """Fetches and parses full article content from NYT article pages using a real browser."""
 
-    def __init__(self, cookie_file: Optional[str] = None, use_browser: bool = True, headless: bool = True):
+    def __init__(self, cookie_file: Optional[str] = None, use_browser: bool = True, headless: bool = True, login_mode: bool = False):
         """Initialize the article fetcher.
 
         Args:
             cookie_file: Path to cookie file (JSON format for Playwright)
             use_browser: Use real browser via Playwright (recommended, bypasses bot detection)
             headless: Run browser in headless mode (set False for debugging)
+            login_mode: Interactive login mode - opens browser for manual login
         """
         self.cookie_file = cookie_file
         self.cookies = []
         self.use_browser = use_browser and PLAYWRIGHT_AVAILABLE
-        self.headless = headless
+        self.headless = headless if not login_mode else False  # Login mode always non-headless
+        self.login_mode = login_mode
+        self.browser = None
+        self.context = None
+        self.logged_in = False
 
         if not PLAYWRIGHT_AVAILABLE and use_browser:
             print("⚠ Playwright not installed. Install with: pip install playwright && playwright install chromium")
             print("  Continuing without browser automation - articles may be blocked by paywall")
             self.use_browser = False
 
-        # Load cookies if provided
-        if cookie_file:
+        # Load cookies if provided (not in login mode)
+        if cookie_file and not login_mode:
             self._load_cookies(cookie_file)
 
     def _load_cookies(self, cookie_file: str):
@@ -114,6 +119,105 @@ class ArticleFetcher:
             print(f"⚠ Warning: Could not load cookies from {cookie_file}: {e}")
             print("  Continuing without authentication - full articles may not be available.")
 
+    def interactive_login(self):
+        """Open browser for interactive login to NYT.
+
+        This method opens a browser window where you can manually log in to NYT.
+        After you log in, the session is preserved for fetching articles.
+        """
+        if not PLAYWRIGHT_AVAILABLE:
+            print("⚠ Playwright not available. Cannot use interactive login.")
+            return False
+
+        try:
+            from playwright.sync_api import sync_playwright
+
+            print("\n" + "="*60)
+            print("INTERACTIVE LOGIN MODE")
+            print("="*60)
+            print("\nA browser window will open. Please:")
+            print("  1. Log in to your NYT account")
+            print("  2. Wait until you see your personalized homepage")
+            print("  3. Come back here and press ENTER to continue")
+            print("\nOpening browser in 3 seconds...")
+            print("="*60 + "\n")
+
+            import time
+            time.sleep(3)
+
+            # Start playwright
+            self.playwright = sync_playwright().start()
+
+            # Launch browser (NON-headless for login)
+            self.browser = self.playwright.chromium.launch(
+                headless=False,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                ]
+            )
+
+            # Create context
+            self.context = self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                locale='en-US',
+                timezone_id='America/New_York',
+            )
+
+            # Create page
+            page = self.context.new_page()
+
+            # Navigate to NYT login page
+            print("📱 Opening NYT login page...")
+            page.goto('https://myaccount.nytimes.com/auth/login', wait_until='domcontentloaded', timeout=30000)
+
+            # Wait for user to log in
+            print("\n✋ Waiting for you to log in...")
+            print("   After logging in, press ENTER here to continue...\n")
+            input(">>> Press ENTER when you're logged in and see the NYT homepage >>> ")
+
+            # Verify login by checking for user-specific elements
+            print("\n🔍 Verifying login status...")
+            page.goto('https://www.nytimes.com/', wait_until='domcontentloaded', timeout=15000)
+            time.sleep(2)
+
+            # Check if logged in (look for account indicators)
+            html = page.content()
+            if 'myaccount' in html.lower() or 'account' in html.lower():
+                print("✅ Successfully logged in!")
+                self.logged_in = True
+
+                # Save cookies for future use (optional)
+                cookies = self.context.cookies()
+                print(f"📦 Session active with {len(cookies)} cookies")
+
+                return True
+            else:
+                print("⚠️  Could not verify login. Proceeding anyway...")
+                self.logged_in = True  # Assume success
+                return True
+
+        except Exception as e:
+            print(f"❌ Error during interactive login: {e}")
+            if self.browser:
+                self.browser.close()
+            self.browser = None
+            self.context = None
+            return False
+
+    def cleanup(self):
+        """Clean up browser resources."""
+        if self.browser:
+            try:
+                self.browser.close()
+                self.playwright.stop()
+            except:
+                pass
+            self.browser = None
+            self.context = None
+
     def fetch_article_content(self, url: str) -> Optional[str]:
         """Fetch the full article content from a URL.
 
@@ -124,9 +228,91 @@ class ArticleFetcher:
             HTML content of the article, or None if fetch fails
         """
         if self.use_browser:
-            return self._fetch_with_browser(url)
+            # In login mode, use existing browser session
+            if self.login_mode and self.logged_in and self.context:
+                return self._fetch_with_existing_session(url)
+            else:
+                return self._fetch_with_browser(url)
         else:
             print(f"    ⚠ Browser automation not available - article may be blocked")
+            return None
+
+    def _fetch_with_existing_session(self, url: str) -> Optional[str]:
+        """Fetch article using the existing logged-in browser session.
+
+        Args:
+            url: The article URL
+
+        Returns:
+            HTML content of the article, or None if fetch fails
+        """
+        try:
+            # Create new page in existing context
+            page = self.context.new_page()
+
+            print(f"    Fetching article with logged-in session...")
+            response = page.goto(url, wait_until='networkidle', timeout=60000)
+
+            if response:
+                if response.status == 403:
+                    print(f"    ⚠ 403 Forbidden (even with login)")
+                    page.close()
+                    return None
+                elif response.status >= 400:
+                    print(f"    ⚠ HTTP {response.status}")
+                    page.close()
+                    return None
+
+            # Wait for content
+            page.wait_for_timeout(2000)
+
+            # Get content
+            html_content = page.content()
+            page.close()
+
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            # Check for paywall
+            if soup.find(string=lambda text: text and 'subscribe' in text.lower()):
+                paywall_divs = soup.find_all(['div', 'section'], class_=lambda x: x and ('paywall' in str(x).lower() or 'gateway' in str(x).lower()))
+                if paywall_divs:
+                    print(f"    ⚠ Paywall detected - login may not have worked")
+                    return None
+
+            # Extract article content
+            article_body = None
+            selectors = [
+                'article[id="story"]',
+                'section[name="articleBody"]',
+                'div.story-body',
+                'article.story',
+                'div.article-body',
+                'article',
+            ]
+
+            for selector in selectors:
+                article_body = soup.select_one(selector)
+                if article_body:
+                    break
+
+            if article_body:
+                # Remove unwanted elements
+                for element in article_body.find_all(['script', 'style', 'nav', 'aside', 'footer', 'button']):
+                    element.decompose()
+
+                # Get all content paragraphs and headers
+                paragraphs = article_body.find_all(['p', 'h2', 'h3', 'h4', 'blockquote'])
+                content_html = ''.join(str(p) for p in paragraphs)
+
+                if content_html.strip():
+                    return content_html
+
+            print(f"    ⚠ Could not find article content")
+            return None
+
+        except Exception as e:
+            print(f"    ⚠ Error: {e}")
             return None
 
     def _fetch_with_browser(self, url: str) -> Optional[str]:

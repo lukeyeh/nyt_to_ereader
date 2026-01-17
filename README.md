@@ -54,37 +54,36 @@ NYT_API_KEY=your_actual_api_key_here
 
 6. **(Optional) Set up authentication for full article access**:
 
-If you have a NYT subscription and want to access full article content (not just abstracts), you'll need to export your browser cookies:
+If you have a NYT subscription and want to access full article content (not just abstracts), you have two options:
 
-**Option 1: Using a Browser Extension (Recommended)**
+**Option 1: Interactive Login (EASIEST - RECOMMENDED!)**
+
+Just use the `--login` flag when running the tool. A browser window will open where you can log in normally:
+
+```bash
+python nyt_to_ereader.py --login
+```
+
+The tool will:
+1. Open a browser window
+2. Navigate to NYT login page
+3. Wait for you to log in manually
+4. Use that logged-in session to fetch all articles
+
+**No cookie export needed!** This is by far the easiest method.
+
+**Option 2: Export Cookies (Advanced)**
+
+If you prefer to save cookies for repeated use:
 
 1. Install a cookie export extension:
    - Chrome/Edge: [Get cookies.txt](https://chrome.google.com/webstore/detail/get-cookiestxt/bgaddhkoddajcdgocldbbfleckgcbcid)
    - Firefox: [cookies.txt](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
 
 2. Log in to nytimes.com in your browser
-3. Click the extension icon and export cookies for nytimes.com
-4. Save the file as `nyt_cookies.txt` in the project directory
-
-**Option 2: Manual JSON Export**
-
-1. Log in to nytimes.com
-2. Open Developer Tools (F12)
-3. Go to Application → Cookies → https://nytimes.com
-4. Look for important cookies like `nyt-a`, `nyt-s`, or similar
-5. Create a JSON file `nyt_cookies.json`:
-```json
-[
-  {
-    "name": "nyt-a",
-    "value": "your_cookie_value_here",
-    "domain": ".nytimes.com",
-    "path": "/"
-  }
-]
-```
-
-Then use the `--cookies` flag when running the tool (see Usage section below).
+3. Export ALL cookies for nytimes.com
+4. Save as `nyt_cookies.txt`
+5. Use `--cookies nyt_cookies.txt` flag when running
 
 ## Usage
 
@@ -99,14 +98,17 @@ This will create a file named `nyt_home_YYYYMMDD.epub` in the current directory.
 
 ### With NYT Subscription (Full Article Access)
 
-If you have a NYT subscription and exported your cookies:
+**EASIEST: Interactive Login**
 ```bash
-python nyt_to_ereader.py --cookies nyt_cookies.txt
-# or
-python nyt_to_ereader.py --cookies nyt_cookies.json
+python nyt_to_ereader.py --login
 ```
 
-This will fetch full article content instead of just abstracts.
+A browser window will open. Log in to your NYT account, then press ENTER in the terminal. That's it!
+
+**Alternative: Using Saved Cookies**
+```bash
+python nyt_to_ereader.py --cookies nyt_cookies.txt
+```
 
 ### Advanced Options
 

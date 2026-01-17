@@ -54,6 +54,12 @@ def main():
         action='store_true',
         help='Run browser in non-headless mode for debugging (shows browser window)'
     )
+    parser.add_argument(
+        '--login',
+        action='store_true',
+        help='Interactive login mode - opens browser for you to log in manually to NYT. '
+             'Much easier than exporting cookies! The browser session is used for all articles.'
+    )
 
     args = parser.parse_args()
 
@@ -97,7 +103,18 @@ def main():
 
     # Process articles
     article_data = []
-    fetcher = ArticleFetcher(cookie_file=args.cookies, headless=not args.debug)
+    fetcher = ArticleFetcher(
+        cookie_file=args.cookies,
+        headless=not args.debug,
+        login_mode=args.login
+    )
+
+    # Handle interactive login if requested
+    if args.login:
+        if not fetcher.interactive_login():
+            print("❌ Login failed. Exiting.", file=sys.stderr)
+            return 1
+        print()
 
     if args.debug:
         print("🐛 DEBUG MODE: Browser will be visible. Watch the automation in action!")
@@ -135,9 +152,20 @@ def main():
         print(f"✓ EPUB created successfully: {output_path}")
         print()
         print(f"Your eBook is ready! Transfer {output_path} to your e-reader device.")
+
+        # Cleanup browser if in login mode
+        if args.login:
+            print("\n🧹 Cleaning up browser session...")
+            fetcher.cleanup()
+
         return 0
     except Exception as e:
         print(f"Error generating EPUB: {e}", file=sys.stderr)
+
+        # Cleanup browser if in login mode
+        if args.login:
+            fetcher.cleanup()
+
         return 1
 
 
