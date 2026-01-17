@@ -60,14 +60,37 @@ class ArticleFetcher:
                     for name, value in cookies.items():
                         self.session.cookies.set(name, value, domain='.nytimes.com')
 
-                print(f"Loaded {len(self.session.cookies)} cookies from {cookie_file}")
+                cookie_names = [c.name for c in self.session.cookies]
+                print(f"✓ Loaded {len(self.session.cookies)} cookies from {cookie_file}")
+                print(f"  Cookie names: {', '.join(cookie_names)}")
+
+                # Check for important NYT authentication cookies
+                important_cookies = ['nyt-a', 'nyt-s', 'NYT-S', 'nyt-auth-method']
+                found_auth = [c for c in important_cookies if c in cookie_names]
+                if found_auth:
+                    print(f"  ✓ Found authentication cookies: {', '.join(found_auth)}")
+                else:
+                    print(f"  ⚠ Warning: No standard NYT authentication cookies found")
+                    print(f"    Expected one of: {', '.join(important_cookies)}")
 
             # Try Netscape cookie jar format
             else:
                 cookie_jar = MozillaCookieJar(cookie_file)
                 cookie_jar.load(ignore_discard=True, ignore_expires=True)
                 self.session.cookies.update(cookie_jar)
-                print(f"Loaded {len(cookie_jar)} cookies from {cookie_file}")
+
+                cookie_names = [c.name for c in cookie_jar]
+                print(f"✓ Loaded {len(cookie_jar)} cookies from {cookie_file}")
+                print(f"  Cookie names: {', '.join(cookie_names)}")
+
+                # Check for important NYT authentication cookies
+                important_cookies = ['nyt-a', 'nyt-s', 'NYT-S', 'nyt-auth-method']
+                found_auth = [c for c in important_cookies if c in cookie_names]
+                if found_auth:
+                    print(f"  ✓ Found authentication cookies: {', '.join(found_auth)}")
+                else:
+                    print(f"  ⚠ Warning: No standard NYT authentication cookies found")
+                    print(f"    Expected one of: {', '.join(important_cookies)}")
 
         except Exception as e:
             print(f"Warning: Could not load cookies from {cookie_file}: {e}")
@@ -83,7 +106,33 @@ class ArticleFetcher:
             HTML content of the article, or None if fetch fails
         """
         try:
-            response = self.session.get(url, timeout=30)
+            # Add comprehensive browser-like headers for each request
+            headers = {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'Referer': 'https://www.nytimes.com/'
+            }
+
+            response = self.session.get(url, headers=headers, timeout=30)
+
+            # Debug: Check if we got a paywall response
+            if response.status_code == 403:
+                print(f"    ⚠ 403 Forbidden - Authentication may have failed")
+                print(f"    Cookies in session: {len(self.session.cookies)} cookies")
+                # Check if we got a paywall page
+                if 'subscribe' in response.text.lower() or 'paywall' in response.text.lower():
+                    print(f"    ⚠ Paywall detected - cookies may be invalid or expired")
+                return None
+
             response.raise_for_status()
 
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -123,8 +172,18 @@ class ArticleFetcher:
 
             return None
 
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                print(f"    ⚠ 403 Forbidden: NYT blocked the request")
+                print(f"    This usually means:")
+                print(f"      - Cookies are missing, invalid, or expired")
+                print(f"      - You need to re-export cookies from your browser")
+                print(f"      - Make sure you're logged in to nytimes.com before exporting")
+            else:
+                print(f"    ⚠ HTTP Error {e.response.status_code}: {e}")
+            return None
         except Exception as e:
-            print(f"Error fetching article from {url}: {e}")
+            print(f"    ⚠ Error fetching article: {e}")
             return None
 
     def create_article_html(self, article_details: Dict, content: Optional[str]) -> str:

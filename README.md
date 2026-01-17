@@ -184,12 +184,22 @@ Note: Older Kindles may require conversion to MOBI format using Calibre or Amazo
 - Without authentication, the tool will fall back to using article abstracts
 - Use `--no-content` flag to skip content fetching entirely if you don't need full articles
 
-**Cookie authentication not working**
-- Make sure you're logged into nytimes.com before exporting cookies
-- Try exporting cookies again - they may have expired
-- Verify the cookie file path is correct
-- Check that the cookie file format is valid (JSON array or Netscape format)
-- Common cookie names to look for: `nyt-a`, `nyt-s`, `NYT-S`
+**Getting 403 Forbidden errors / Cookie authentication not working**
+
+When the tool reports "403 Forbidden", it means NYT blocked the request. Here's how to fix it:
+
+1. **Verify you're logged in**: Open nytimes.com in your browser and confirm you can read articles
+2. **Export ALL cookies** (not just one or two):
+   - Using browser extension: Make sure to select "Export all cookies for nytimes.com"
+   - Manual export: You need multiple cookies, not just `nyt-a`. Export ALL cookies from the nytimes.com domain
+3. **Check cookie validity**: The tool will show which cookies were loaded. Look for these authentication cookies:
+   - `nyt-a` (primary authentication)
+   - `nyt-s` (session)
+   - `NYT-S` (alternative session)
+   - `nyt-auth-method`
+4. **Cookies expire**: If it worked before but stopped, re-export your cookies (they typically expire after a few weeks)
+5. **Test immediately**: After exporting cookies, run the tool right away to verify they work
+6. **Domain must be correct**: In JSON format, the domain should be `.nytimes.com` (with the leading dot)
 
 **API rate limits**
 - The free NYT API tier has rate limits (typically 500 requests per day, 5 per minute)
