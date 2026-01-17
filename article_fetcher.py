@@ -128,7 +128,7 @@ class ArticleFetcher:
             return None
 
     def _fetch_with_browser(self, url: str) -> Optional[str]:
-        """Fetch article using a real browser (Playwright).
+        """Fetch article using a real browser with anti-detection measures.
 
         Args:
             url: The article URL
@@ -138,31 +138,92 @@ class ArticleFetcher:
         """
         try:
             with sync_playwright() as p:
-                # Launch browser (headless mode)
-                browser = p.chromium.launch(headless=True)
+                # Launch browser with anti-detection flags
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-web-security',
+                        '--disable-features=IsolateOrigins,site-per-process'
+                    ]
+                )
 
-                # Create context with cookies
-                context = browser.new_context()
+                # Create context with realistic device emulation
+                context = browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                    locale='en-US',
+                    timezone_id='America/New_York',
+                    permissions=['geolocation'],
+                    color_scheme='light',
+                    extra_http_headers={
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Cache-Control': 'max-age=0',
+                    }
+                )
 
-                # Add cookies if available
+                # Add cookies if available (BEFORE creating the page)
                 if self.cookies:
                     context.add_cookies(self.cookies)
 
                 # Create new page
                 page = context.new_page()
 
-                # Navigate to article
+                # Add JavaScript to hide automation indicators
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+
+                    window.chrome = {
+                        runtime: {}
+                    };
+
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en']
+                    });
+                """)
+
+                # Navigate to article with realistic behavior
                 try:
-                    response = page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                    # FIRST: Visit NYT homepage to establish session (looks more human)
+                    print(f"    Establishing session at nytimes.com...")
+                    page.goto('https://www.nytimes.com/', wait_until='domcontentloaded', timeout=30000)
+                    page.wait_for_timeout(1000 + (hash(url) % 1000))  # Random delay 1-2s
+
+                    # NOW: Navigate to the actual article
+                    print(f"    Fetching article...")
+                    response = page.goto(url, wait_until='networkidle', timeout=45000)
 
                     # Check if we got blocked
                     if response and response.status == 403:
-                        print(f"    ⚠ 403 Forbidden - Authentication may have failed")
+                        print(f"    ⚠ 403 Forbidden - NYT blocked the request")
                         browser.close()
                         return None
 
-                    # Wait a bit for dynamic content to load
-                    page.wait_for_timeout(2000)
+                    # Wait for content to fully load (random human-like delay)
+                    import time
+                    page.wait_for_timeout(2000 + (hash(url) % 1500))
+
+                    # Scroll down a bit (human behavior)
+                    page.evaluate('window.scrollBy(0, 500)')
+                    page.wait_for_timeout(500)
 
                     # Get the page content
                     html_content = page.content()

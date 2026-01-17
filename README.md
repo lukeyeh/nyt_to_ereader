@@ -149,14 +149,24 @@ python nyt_to_ereader.py --help
 ## How It Works
 
 1. **Fetch Stories**: Uses the NYT Top Stories API to get the latest articles from the specified section
-2. **Parse Content**: Uses Playwright (real Chromium browser) to fetch full article content, bypassing NYT's bot detection. If you have a subscription, your cookies are loaded into the browser for authenticated access.
+2. **Parse Content**: Uses Playwright (real Chromium browser) with advanced anti-detection measures:
+   - Disables automation flags (`navigator.webdriver`, etc.)
+   - Emulates real desktop device (1920x1080, Windows Chrome)
+   - Visits NYT homepage first to establish authentic session
+   - Uses random delays and human-like behavior (scrolling, realistic timing)
+   - Waits for network idle to ensure full page load
+   - Your subscription cookies are loaded into the browser context
 3. **Generate EPUB**: Creates an EPUB file with:
    - Table of contents with all articles
    - Each article as a separate chapter
    - Clean formatting with title, byline, date, and content
    - Readable typography optimized for e-readers
 
-**Why Playwright?** NYT uses sophisticated bot detection that blocks simple HTTP requests (like `requests` library). Playwright launches a real browser, making requests indistinguishable from a human browsing the site.
+**Anti-Detection Measures**: NYT uses sophisticated bot detection (TLS fingerprinting, JavaScript challenges, behavioral analysis). This tool defeats it by:
+- Using a real Chromium browser (not HTTP simulation)
+- Hiding automation indicators via JavaScript injection
+- Mimicking human browsing patterns (homepage → article, scrolling, random delays)
+- Setting realistic headers, viewport, timezone, and device properties
 
 ## Transferring to Your E-Reader
 
