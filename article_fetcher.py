@@ -148,13 +148,21 @@ class ArticleFetcher:
             # Start playwright
             self.playwright = sync_playwright().start()
 
-            # Launch browser (NON-headless for login)
+            # Launch browser (NON-headless for login) with maximum stealth
             self.browser = self.playwright.chromium.launch(
                 headless=False,
                 args=[
                     '--disable-blink-features=AutomationControlled',
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
+                    '--disable-infobars',
+                    '--disable-dev-shm-usage',
+                    '--disable-browser-side-navigation',
+                    '--disable-gpu',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-web-security',
                 ]
             )
 
@@ -169,19 +177,56 @@ class ArticleFetcher:
             # Create page
             page = self.context.new_page()
 
+            # Add stealth JavaScript (same as main fetcher)
+            page.add_init_script("""
+                // Override webdriver
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+
+                // Add chrome object
+                window.chrome = {
+                    runtime: {},
+                    loadTimes: function() {},
+                    csi: function() {},
+                    app: {}
+                };
+
+                // Override plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [
+                        {name: 'Chrome PDF Plugin', description: 'Portable Document Format', filename: 'internal-pdf-viewer'},
+                        {name: 'Chrome PDF Viewer', description: '', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                        {name: 'Native Client', description: '', filename: 'internal-nacl-plugin'}
+                    ]
+                });
+
+                // Override other detection points
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+                Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
+                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+                Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+                Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+            """)
+
             # Navigate to NYT login page
             print("📱 Opening NYT login page...")
             page.goto('https://myaccount.nytimes.com/auth/login', wait_until='domcontentloaded', timeout=30000)
 
             # Wait for user to log in
             print("\n✋ Waiting for you to log in...")
-            print("   After logging in, press ENTER here to continue...\n")
+            print("   If you see a CAPTCHA (puzzle piece), solve it first!")
+            print("   After logging in successfully, press ENTER here to continue...\n")
             input(">>> Press ENTER when you're logged in and see the NYT homepage >>> ")
 
             # Verify login by checking for user-specific elements
             print("\n🔍 Verifying login status...")
             page.goto('https://www.nytimes.com/', wait_until='domcontentloaded', timeout=15000)
             time.sleep(2)
+
+            # Check for CAPTCHA on homepage
+            self._detect_and_handle_captcha(page)
 
             # Check if logged in (look for account indicators)
             html = page.content()
@@ -237,6 +282,56 @@ class ArticleFetcher:
             print(f"    ⚠ Browser automation not available - article may be blocked")
             return None
 
+    def _detect_and_handle_captcha(self, page) -> bool:
+        """Detect if CAPTCHA appeared and handle it.
+
+        Args:
+            page: Playwright page object
+
+        Returns:
+            True if CAPTCHA was handled, False otherwise
+        """
+        try:
+            # Check for common CAPTCHA indicators
+            html = page.content()
+            captcha_indicators = [
+                'captcha',
+                'challenge',
+                'puzzle',
+                'slider',
+                'verification',
+                'px-captcha',  # PerimeterX CAPTCHA
+                'arkose',      # Arkose Labs
+                'recaptcha'
+            ]
+
+            has_captcha = any(indicator in html.lower() for indicator in captcha_indicators)
+
+            if has_captcha:
+                print(f"\n" + "="*60)
+                print("⚠️  CAPTCHA DETECTED!")
+                print("="*60)
+                print("\nNYT is showing a CAPTCHA challenge (puzzle piece slider).")
+                print("\n🧩 PLEASE SOLVE THE CAPTCHA IN THE BROWSER WINDOW:")
+                print("   1. Drag the puzzle piece to complete the image")
+                print("   2. Wait for the page to load normally")
+                print("   3. Press ENTER here when you're done")
+                print("\n" + "="*60 + "\n")
+
+                # Wait for user to solve CAPTCHA
+                input(">>> Press ENTER after solving the CAPTCHA >>> ")
+
+                # Wait a bit for page to settle
+                page.wait_for_timeout(2000)
+                print("✅ Continuing...")
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"    ⚠ Error checking for CAPTCHA: {e}")
+            return False
+
     def _fetch_with_existing_session(self, url: str) -> Optional[str]:
         """Fetch article using the existing logged-in browser session.
 
@@ -249,6 +344,13 @@ class ArticleFetcher:
         try:
             # Create new page in existing context
             page = self.context.new_page()
+
+            # Add some random delay to seem more human (avoid triggering CAPTCHA)
+            import time
+            import random
+            delay = random.uniform(2.0, 5.0)
+            print(f"    Waiting {delay:.1f}s before fetching (human-like behavior)...")
+            time.sleep(delay)
 
             print(f"    Fetching article with logged-in session...")
             response = page.goto(url, wait_until='networkidle', timeout=60000)
@@ -263,8 +365,15 @@ class ArticleFetcher:
                     page.close()
                     return None
 
+            # Check for CAPTCHA
+            self._detect_and_handle_captcha(page)
+
             # Wait for content
             page.wait_for_timeout(2000)
+
+            # Scroll a bit (human behavior)
+            page.evaluate('window.scrollBy(0, 300)')
+            page.wait_for_timeout(500)
 
             # Get content
             html_content = page.content()

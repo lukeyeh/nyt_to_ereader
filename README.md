@@ -68,9 +68,16 @@ The tool will:
 1. Open a browser window
 2. Navigate to NYT login page
 3. Wait for you to log in manually
-4. Use that logged-in session to fetch all articles
+4. **If NYT shows a CAPTCHA (puzzle piece), you'll solve it in the browser**
+5. Use that logged-in session to fetch all articles
 
 **No cookie export needed!** This is by far the easiest method.
+
+**Note about CAPTCHAs:** NYT uses slider CAPTCHAs (drag puzzle piece) to detect bots. When you see one:
+- The tool will automatically detect it and pause
+- You solve it manually in the browser window
+- Press ENTER in the terminal to continue
+- The tool waits 2-5 seconds between articles to avoid triggering more CAPTCHAs
 
 **Option 2: Export Cookies (Advanced)**
 
@@ -234,6 +241,26 @@ This error occurs when cookie files have invalid `sameSite` values. The tool now
 - If you're manually creating JSON cookies, use `"sameSite": "Lax"` (most common)
 - Browser extensions usually export this correctly
 - See `cookies.json.example` for the correct format
+
+**Getting CAPTCHAs (puzzle piece slider)**
+
+NYT uses CAPTCHAs to detect automated access. The tool handles this automatically:
+
+1. **During Login** (`--login` mode):
+   - If CAPTCHA appears during login, solve it before pressing ENTER
+   - The tool instructions will remind you
+
+2. **During Article Fetching**:
+   - Tool automatically detects CAPTCHAs on article pages
+   - Pauses and asks you to solve it in the browser window
+   - Press ENTER after solving to continue
+   - Tool adds 2-5 second random delays between articles to avoid triggering more
+
+3. **Reducing CAPTCHAs**:
+   - Use `--login` mode (keeps one browser session open)
+   - Add `--limit 5` to fetch fewer articles at once
+   - Wait a few minutes between runs
+   - CAPTCHAs are more common when fetching many articles quickly
 
 **API rate limits**
 - The free NYT API tier has rate limits (typically 500 requests per day, 5 per minute)
