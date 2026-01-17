@@ -215,6 +215,14 @@ If you have a subscription but still see paywall messages:
 5. **Test immediately**: After exporting cookies, run the tool right away to verify they work
 6. **Domain must be correct**: In JSON format, the domain should be `.nytimes.com` (with the leading dot)
 
+**"Browser error: sameSite: expected one of (Strict|Lax|None)"**
+
+This error occurs when cookie files have invalid `sameSite` values. The tool now automatically fixes this, but if you see this error:
+- The `sameSite` field in your cookies must be exactly "Strict", "Lax", or "None" (capitalized)
+- If you're manually creating JSON cookies, use `"sameSite": "Lax"` (most common)
+- Browser extensions usually export this correctly
+- See `cookies.json.example` for the correct format
+
 **API rate limits**
 - The free NYT API tier has rate limits (typically 500 requests per day, 5 per minute)
 - If you hit limits, wait a few minutes and try again

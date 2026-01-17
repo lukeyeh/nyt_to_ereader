@@ -3,12 +3,18 @@
     "name": "nyt-a",
     "value": "YOUR_COOKIE_VALUE_HERE",
     "domain": ".nytimes.com",
-    "path": "/"
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "sameSite": "Lax"
   },
   {
     "name": "nyt-s",
     "value": "YOUR_COOKIE_VALUE_HERE",
     "domain": ".nytimes.com",
-    "path": "/"
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "sameSite": "Lax"
   }
 ]

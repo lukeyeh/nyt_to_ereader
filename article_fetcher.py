@@ -67,8 +67,19 @@ class ArticleFetcher:
                         playwright_cookie['httpOnly'] = cookie['httpOnly']
                     if 'secure' in cookie:
                         playwright_cookie['secure'] = cookie['secure']
+
+                    # Handle sameSite - Playwright is strict about valid values
                     if 'sameSite' in cookie:
-                        playwright_cookie['sameSite'] = cookie['sameSite']
+                        same_site = cookie['sameSite']
+                        # Normalize to capitalized format
+                        if isinstance(same_site, str):
+                            same_site_normalized = same_site.capitalize()
+                            # Only include if it's a valid value
+                            if same_site_normalized in ['Strict', 'Lax', 'None']:
+                                playwright_cookie['sameSite'] = same_site_normalized
+                            # Handle special case for "no_restriction" -> "None"
+                            elif same_site.lower() == 'no_restriction':
+                                playwright_cookie['sameSite'] = 'None'
 
                     self.cookies.append(playwright_cookie)
 
