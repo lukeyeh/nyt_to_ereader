@@ -1,100 +1,105 @@
 """Fetch and parse full article content from NYT."""
 import json
-import requests
-from bs4 import BeautifulSoup
 from pathlib import Path
 from typing import Dict, Optional
-from http.cookiejar import MozillaCookieJar
+from bs4 import BeautifulSoup
+
+try:
+    from playwright.sync_api import sync_playwright, Browser, BrowserContext
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 
 class ArticleFetcher:
-    """Fetches and parses full article content from NYT article pages."""
+    """Fetches and parses full article content from NYT article pages using a real browser."""
 
-    def __init__(self, cookie_file: Optional[str] = None):
+    def __init__(self, cookie_file: Optional[str] = None, use_browser: bool = True):
         """Initialize the article fetcher.
 
         Args:
-            cookie_file: Path to cookie file (JSON or Netscape format)
+            cookie_file: Path to cookie file (JSON format for Playwright)
+            use_browser: Use real browser via Playwright (recommended, bypasses bot detection)
         """
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
+        self.cookie_file = cookie_file
+        self.cookies = []
+        self.use_browser = use_browser and PLAYWRIGHT_AVAILABLE
+
+        if not PLAYWRIGHT_AVAILABLE and use_browser:
+            print("⚠ Playwright not installed. Install with: pip install playwright && playwright install chromium")
+            print("  Continuing without browser automation - articles may be blocked by paywall")
+            self.use_browser = False
 
         # Load cookies if provided
         if cookie_file:
             self._load_cookies(cookie_file)
 
     def _load_cookies(self, cookie_file: str):
-        """Load cookies from a file.
-
-        Supports both JSON format and Netscape cookie jar format.
+        """Load cookies from a JSON file.
 
         Args:
-            cookie_file: Path to the cookie file
+            cookie_file: Path to the cookie file (JSON format)
         """
         cookie_path = Path(cookie_file)
 
         if not cookie_path.exists():
-            print(f"Warning: Cookie file not found: {cookie_file}")
+            print(f"⚠ Warning: Cookie file not found: {cookie_file}")
             return
 
         try:
-            # Try JSON format first
-            if cookie_path.suffix == '.json':
-                with open(cookie_path, 'r') as f:
-                    cookies = json.load(f)
+            with open(cookie_path, 'r') as f:
+                cookies_data = json.load(f)
 
-                # Handle different JSON cookie formats
-                if isinstance(cookies, list):
-                    # Format: [{"name": "...", "value": "...", "domain": "..."}, ...]
-                    for cookie in cookies:
-                        self.session.cookies.set(
-                            name=cookie.get('name'),
-                            value=cookie.get('value'),
-                            domain=cookie.get('domain', '.nytimes.com'),
-                            path=cookie.get('path', '/')
-                        )
-                elif isinstance(cookies, dict):
-                    # Format: {"cookie_name": "cookie_value", ...}
-                    for name, value in cookies.items():
-                        self.session.cookies.set(name, value, domain='.nytimes.com')
+            # Convert to Playwright cookie format
+            if isinstance(cookies_data, list):
+                for cookie in cookies_data:
+                    # Playwright expects specific format
+                    playwright_cookie = {
+                        'name': cookie.get('name'),
+                        'value': cookie.get('value'),
+                        'domain': cookie.get('domain', '.nytimes.com'),
+                        'path': cookie.get('path', '/'),
+                    }
+                    # Add optional fields if present
+                    if 'expires' in cookie:
+                        playwright_cookie['expires'] = cookie['expires']
+                    if 'httpOnly' in cookie:
+                        playwright_cookie['httpOnly'] = cookie['httpOnly']
+                    if 'secure' in cookie:
+                        playwright_cookie['secure'] = cookie['secure']
+                    if 'sameSite' in cookie:
+                        playwright_cookie['sameSite'] = cookie['sameSite']
 
-                cookie_names = [c.name for c in self.session.cookies]
-                print(f"✓ Loaded {len(self.session.cookies)} cookies from {cookie_file}")
-                print(f"  Cookie names: {', '.join(cookie_names)}")
+                    self.cookies.append(playwright_cookie)
 
-                # Check for important NYT authentication cookies
-                important_cookies = ['nyt-a', 'nyt-s', 'NYT-S', 'nyt-auth-method']
-                found_auth = [c for c in important_cookies if c in cookie_names]
-                if found_auth:
-                    print(f"  ✓ Found authentication cookies: {', '.join(found_auth)}")
-                else:
-                    print(f"  ⚠ Warning: No standard NYT authentication cookies found")
-                    print(f"    Expected one of: {', '.join(important_cookies)}")
+            elif isinstance(cookies_data, dict):
+                # Simple format: {"cookie_name": "cookie_value"}
+                for name, value in cookies_data.items():
+                    self.cookies.append({
+                        'name': name,
+                        'value': value,
+                        'domain': '.nytimes.com',
+                        'path': '/'
+                    })
 
-            # Try Netscape cookie jar format
+            cookie_names = [c['name'] for c in self.cookies]
+            print(f"✓ Loaded {len(self.cookies)} cookies from {cookie_file}")
+            print(f"  Cookie names: {', '.join(cookie_names[:10])}")
+            if len(cookie_names) > 10:
+                print(f"  ... and {len(cookie_names) - 10} more")
+
+            # Check for important NYT authentication cookies
+            important_cookies = ['nyt-a', 'nyt-s', 'NYT-S', 'nyt-auth-method']
+            found_auth = [c for c in important_cookies if c in cookie_names]
+            if found_auth:
+                print(f"  ✓ Found authentication cookies: {', '.join(found_auth)}")
             else:
-                cookie_jar = MozillaCookieJar(cookie_file)
-                cookie_jar.load(ignore_discard=True, ignore_expires=True)
-                self.session.cookies.update(cookie_jar)
-
-                cookie_names = [c.name for c in cookie_jar]
-                print(f"✓ Loaded {len(cookie_jar)} cookies from {cookie_file}")
-                print(f"  Cookie names: {', '.join(cookie_names)}")
-
-                # Check for important NYT authentication cookies
-                important_cookies = ['nyt-a', 'nyt-s', 'NYT-S', 'nyt-auth-method']
-                found_auth = [c for c in important_cookies if c in cookie_names]
-                if found_auth:
-                    print(f"  ✓ Found authentication cookies: {', '.join(found_auth)}")
-                else:
-                    print(f"  ⚠ Warning: No standard NYT authentication cookies found")
-                    print(f"    Expected one of: {', '.join(important_cookies)}")
+                print(f"  ⚠ Warning: No standard NYT authentication cookies found")
+                print(f"    Expected one of: {', '.join(important_cookies)}")
 
         except Exception as e:
-            print(f"Warning: Could not load cookies from {cookie_file}: {e}")
-            print("Continuing without authentication - full articles may not be available.")
+            print(f"⚠ Warning: Could not load cookies from {cookie_file}: {e}")
+            print("  Continuing without authentication - full articles may not be available.")
 
     def fetch_article_content(self, url: str) -> Optional[str]:
         """Fetch the full article content from a URL.
@@ -105,85 +110,105 @@ class ArticleFetcher:
         Returns:
             HTML content of the article, or None if fetch fails
         """
+        if self.use_browser:
+            return self._fetch_with_browser(url)
+        else:
+            print(f"    ⚠ Browser automation not available - article may be blocked")
+            return None
+
+    def _fetch_with_browser(self, url: str) -> Optional[str]:
+        """Fetch article using a real browser (Playwright).
+
+        Args:
+            url: The article URL
+
+        Returns:
+            HTML content of the article, or None if fetch fails
+        """
         try:
-            # Add comprehensive browser-like headers for each request
-            headers = {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Cache-Control': 'max-age=0',
-                'Referer': 'https://www.nytimes.com/'
-            }
+            with sync_playwright() as p:
+                # Launch browser (headless mode)
+                browser = p.chromium.launch(headless=True)
 
-            response = self.session.get(url, headers=headers, timeout=30)
+                # Create context with cookies
+                context = browser.new_context()
 
-            # Debug: Check if we got a paywall response
-            if response.status_code == 403:
-                print(f"    ⚠ 403 Forbidden - Authentication may have failed")
-                print(f"    Cookies in session: {len(self.session.cookies)} cookies")
-                # Check if we got a paywall page
-                if 'subscribe' in response.text.lower() or 'paywall' in response.text.lower():
-                    print(f"    ⚠ Paywall detected - cookies may be invalid or expired")
-                return None
+                # Add cookies if available
+                if self.cookies:
+                    context.add_cookies(self.cookies)
 
-            response.raise_for_status()
+                # Create new page
+                page = context.new_page()
 
-            soup = BeautifulSoup(response.content, 'html.parser')
+                # Navigate to article
+                try:
+                    response = page.goto(url, wait_until='domcontentloaded', timeout=30000)
 
-            # NYT articles are typically in a <article> tag or sections with specific classes
-            # Try to find the main article content
-            article_body = None
+                    # Check if we got blocked
+                    if response and response.status == 403:
+                        print(f"    ⚠ 403 Forbidden - Authentication may have failed")
+                        browser.close()
+                        return None
 
-            # Try various selectors that NYT uses
-            selectors = [
-                'article[id="story"]',
-                'section[name="articleBody"]',
-                'div.story-body',
-                'article.story',
-                'div.article-body',
-            ]
+                    # Wait a bit for dynamic content to load
+                    page.wait_for_timeout(2000)
 
-            for selector in selectors:
-                article_body = soup.select_one(selector)
-                if article_body:
-                    break
+                    # Get the page content
+                    html_content = page.content()
 
-            if not article_body:
-                # Fallback: try to find all paragraph tags
-                article_body = soup.find('article')
+                    # Close browser
+                    browser.close()
 
-            if article_body:
-                # Remove script, style, and nav elements
-                for element in article_body.find_all(['script', 'style', 'nav', 'aside', 'footer']):
-                    element.decompose()
+                    # Parse with BeautifulSoup
+                    soup = BeautifulSoup(html_content, 'html.parser')
 
-                # Get all paragraphs
-                paragraphs = article_body.find_all(['p', 'h2', 'h3'])
-                content_html = ''.join(str(p) for p in paragraphs)
+                    # Check for paywall indicators
+                    if soup.find(string=lambda text: text and 'subscribe' in text.lower()):
+                        paywall_divs = soup.find_all(['div', 'section'], class_=lambda x: x and ('paywall' in str(x).lower() or 'gateway' in str(x).lower()))
+                        if paywall_divs:
+                            print(f"    ⚠ Paywall detected - cookies may be invalid or expired")
+                            return None
 
-                return content_html
+                    # Try to find the main article content
+                    article_body = None
 
-            return None
+                    # Try various selectors that NYT uses
+                    selectors = [
+                        'article[id="story"]',
+                        'section[name="articleBody"]',
+                        'div.story-body',
+                        'article.story',
+                        'div.article-body',
+                        'article',
+                    ]
 
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
-                print(f"    ⚠ 403 Forbidden: NYT blocked the request")
-                print(f"    This usually means:")
-                print(f"      - Cookies are missing, invalid, or expired")
-                print(f"      - You need to re-export cookies from your browser")
-                print(f"      - Make sure you're logged in to nytimes.com before exporting")
-            else:
-                print(f"    ⚠ HTTP Error {e.response.status_code}: {e}")
-            return None
+                    for selector in selectors:
+                        article_body = soup.select_one(selector)
+                        if article_body:
+                            break
+
+                    if article_body:
+                        # Remove unwanted elements
+                        for element in article_body.find_all(['script', 'style', 'nav', 'aside', 'footer', 'button']):
+                            element.decompose()
+
+                        # Get all content paragraphs and headers
+                        paragraphs = article_body.find_all(['p', 'h2', 'h3', 'h4', 'blockquote'])
+                        content_html = ''.join(str(p) for p in paragraphs)
+
+                        if content_html.strip():
+                            return content_html
+
+                    print(f"    ⚠ Could not find article content on page")
+                    return None
+
+                except Exception as e:
+                    print(f"    ⚠ Error loading page: {e}")
+                    browser.close()
+                    return None
+
         except Exception as e:
-            print(f"    ⚠ Error fetching article: {e}")
+            print(f"    ⚠ Browser error: {e}")
             return None
 
     def create_article_html(self, article_details: Dict, content: Optional[str]) -> str:

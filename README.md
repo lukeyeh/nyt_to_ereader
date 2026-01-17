@@ -23,18 +23,25 @@ git clone <repository-url>
 cd nyt_to_ereader
 ```
 
-2. Install dependencies:
+2. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Get your NYT API key:
+3. **Install Playwright browser (REQUIRED for bypassing NYT bot detection)**:
+```bash
+playwright install chromium
+```
+
+This downloads a real Chromium browser that the tool uses to fetch articles. This is required because NYT blocks automated requests from simple HTTP libraries.
+
+4. Get your NYT API key:
    - Go to https://developer.nytimes.com/
    - Create an account (free)
    - Create an app and enable the "Top Stories API"
    - Copy your API key
 
-4. Configure your API key:
+5. Configure your API key:
 ```bash
 cp .env.example .env
 # Edit .env and add your API key
@@ -45,7 +52,7 @@ Your `.env` file should look like:
 NYT_API_KEY=your_actual_api_key_here
 ```
 
-5. **(Optional) Set up authentication for full article access**:
+6. **(Optional) Set up authentication for full article access**:
 
 If you have a NYT subscription and want to access full article content (not just abstracts), you'll need to export your browser cookies:
 
@@ -142,12 +149,14 @@ python nyt_to_ereader.py --help
 ## How It Works
 
 1. **Fetch Stories**: Uses the NYT Top Stories API to get the latest articles from the specified section
-2. **Parse Content**: Optionally fetches the full article content from each article's URL
+2. **Parse Content**: Uses Playwright (real Chromium browser) to fetch full article content, bypassing NYT's bot detection. If you have a subscription, your cookies are loaded into the browser for authenticated access.
 3. **Generate EPUB**: Creates an EPUB file with:
    - Table of contents with all articles
    - Each article as a separate chapter
    - Clean formatting with title, byline, date, and content
    - Readable typography optimized for e-readers
+
+**Why Playwright?** NYT uses sophisticated bot detection that blocks simple HTTP requests (like `requests` library). Playwright launches a real browser, making requests indistinguishable from a human browsing the site.
 
 ## Transferring to Your E-Reader
 
@@ -173,6 +182,11 @@ Note: Older Kindles may require conversion to MOBI format using Calibre or Amazo
 
 ## Troubleshooting
 
+**"Playwright not installed" warning**
+- Run: `pip install playwright && playwright install chromium`
+- This downloads the Chromium browser needed to bypass NYT's bot detection
+- Required for fetching full article content
+
 **"NYT_API_KEY not found" error**
 - Make sure you've created a `.env` file (not `.env.example`)
 - Verify your API key is set correctly in `.env`
@@ -180,13 +194,13 @@ Note: Older Kindles may require conversion to MOBI format using Calibre or Amazo
 
 **"Could not fetch full content" warnings**
 - NYT articles are behind a paywall for non-subscribers
-- If you have a NYT subscription, export your cookies and use `--cookies` flag (see installation step 5)
+- If you have a NYT subscription, export your cookies and use `--cookies` flag (see installation step 6)
 - Without authentication, the tool will fall back to using article abstracts
 - Use `--no-content` flag to skip content fetching entirely if you don't need full articles
 
-**Getting 403 Forbidden errors / Cookie authentication not working**
+**Getting "Paywall detected" / Cookie authentication not working**
 
-When the tool reports "403 Forbidden", it means NYT blocked the request. Here's how to fix it:
+If you have a subscription but still see paywall messages:
 
 1. **Verify you're logged in**: Open nytimes.com in your browser and confirm you can read articles
 2. **Export ALL cookies** (not just one or two):
